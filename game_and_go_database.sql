@@ -21,7 +21,7 @@
 -- ============================================================================
 -- 0. DATABASE SETUP
 -- ============================================================================
-
+-- Dev database name: game_and_go_dev
 -- TODO [M1]: Create/select the development PostgreSQL database in pgAdmin.
 -- TODO [M1]: Record the final database name used by the team.
 -- NOTE: Never hard-code a real password into C++ or Git. The final connection
@@ -46,14 +46,14 @@
 --
 -- Declaration shape only:
 --
--- CREATE TABLE branches (
---     id SERIAL PRIMARY KEY,
---     branch_name VARCHAR(100) NOT NULL,
---     street_address VARCHAR(150) NOT NULL,
---     district VARCHAR(100) NOT NULL,
---     location_city VARCHAR(100) NOT NULL,
---     location_country VARCHAR(100) NOT NULL
--- );
+ CREATE TABLE branches (
+     id SERIAL PRIMARY KEY,
+     branch_name VARCHAR(100) NOT NULL,
+     street_address VARCHAR(150) NOT NULL,
+     district VARCHAR(100) NOT NULL,
+     location_city VARCHAR(100) NOT NULL,
+     location_country VARCHAR(100) NOT NULL
+ );
 
 -- ============================================================================
 -- 2. TABLE: users
@@ -80,13 +80,14 @@
 --
 -- Declaration shape only:
 --
--- CREATE TABLE users (
---     id SERIAL PRIMARY KEY,
---     name VARCHAR(100) NOT NULL,
---     role VARCHAR(50) NOT NULL,
---     phone VARCHAR(20),
---     branch_id INT REFERENCES branches(id) ON DELETE SET NULL
--- );
+ CREATE TABLE users (
+     id SERIAL PRIMARY KEY,
+     name VARCHAR(100) NOT NULL,
+     role VARCHAR(50) NOT NULL,
+     phone VARCHAR(20),
+     branch_id INT REFERENCES branches(id) ON DELETE SET NULL,
+        CHECK (role IN ('Admin', 'Staff', 'Customer'))
+ );
 
 -- ============================================================================
 -- 3. TABLE: stations
@@ -116,13 +117,16 @@
 --
 -- Declaration shape only:
 --
--- CREATE TABLE stations (
---     id SERIAL PRIMARY KEY,
---     branch_id INT NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
---     type VARCHAR(50) NOT NULL,
---     hourly_rate NUMERIC(10,2) NOT NULL,
---     status VARCHAR(50) NOT NULL
--- );
+ CREATE TABLE stations (
+     id SERIAL PRIMARY KEY,
+     branch_id INT NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+     type VARCHAR(50) NOT NULL,
+     hourly_rate NUMERIC(10,2) NOT NULL,
+     status VARCHAR(50) NOT NULL,
+        CHECK (type IN ('PC', 'PS4', 'PS5')),
+        CHECK (status IN ('Available', 'InUse', 'Maintenance')),
+        CHECK (hourly_rate >= 0)
+ );
 
 -- ============================================================================
 -- 4. TABLE: reservations
@@ -158,15 +162,18 @@
 --
 -- Declaration shape only:
 --
--- CREATE TABLE reservations (
---     id SERIAL PRIMARY KEY,
---     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
---     branch_id INT NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
---     station_type VARCHAR(50) NOT NULL,
---     reserved_time TIMESTAMP NOT NULL,
---     deposit_amount NUMERIC(10,2) NOT NULL,
---     status VARCHAR(50) NOT NULL
--- );
+ CREATE TABLE reservations (
+     id SERIAL PRIMARY KEY,
+     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     branch_id INT NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+     station_type VARCHAR(50) NOT NULL,
+     reserved_time TIMESTAMP NOT NULL,
+     deposit_amount NUMERIC(10,2) NOT NULL,
+     status VARCHAR(50) NOT NULL,
+        CHECK (station_type IN ('PC', 'PS4', 'PS5')),
+        CHECK (status IN ('Pending', 'Confirmed', 'Canceled')),
+        CHECK (deposit_amount >= 0)
+     );
 
 -- ============================================================================
 -- 5. TABLE: sessions
@@ -195,14 +202,16 @@
 --
 -- Declaration shape only:
 --
--- CREATE TABLE sessions (
---     id SERIAL PRIMARY KEY,
---     station_id INT NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
---     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
---     start_time TIMESTAMP NOT NULL,
---     end_time TIMESTAMP,
---     final_cost NUMERIC(10,2)
--- );
+ CREATE TABLE sessions (
+     id SERIAL PRIMARY KEY,
+     station_id INT NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     start_time TIMESTAMP NOT NULL,
+     end_time TIMESTAMP,
+     final_cost NUMERIC(10,2),
+        CHECK (final_cost >= 0),
+        CHECK (end_time IS NULL OR end_time >= start_time)
+    );
 
 -- ============================================================================
 -- 6. RELATIONSHIP MAP
