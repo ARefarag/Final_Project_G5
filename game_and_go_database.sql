@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
 -- ============================================================================
 -- GAME&GO - GAMING LOUNGE TIME & TAB MANAGER
 -- POSTGRESQL DECLARATION / TODO TEMPLATE ONLY
@@ -21,11 +22,11 @@
 -- ============================================================================
 -- 0. DATABASE SETUP
 -- ============================================================================
--- Dev database name: game_and_go_dev
 -- TODO [M1]: Create/select the development PostgreSQL database in pgAdmin.
 -- TODO [M1]: Record the final database name used by the team.
 -- NOTE: Never hard-code a real password into C++ or Git. The final connection
 --       configuration is handled by the application's database adapter.
+-- Dev database name: game_and_go_dev
 
 -- ============================================================================
 -- 1. TABLE: branches
@@ -260,6 +261,23 @@
 --
 -- TODO [M1]: Implement actual working examples for each of the following.
 --
+-- HOW TO RUN THE WRITE EXAMPLES BELOW
+--   These statements are commented out on purpose. Section 10 seed data runs
+--   first on a full-file execute, so the Test rows below only get the ids they
+--   reference (branch 4, customer 17, stations 19/20/21) after that seed runs.
+--   To demo a write, uncomment only the statement you need, select just that
+--   line in pgAdmin, and execute that single selection.
+--
+--   Test id map after a fresh load of this file:
+--     dev branches     = 1, 2, 3
+--     dev users        = 1..14   (customers are 10..14)
+--     dev stations     = 1..18
+--     Test branch      = 4
+--     Test users       = 15 admin, 16 staff, 17 customer
+--     Test stations    = 19 PC, 20 PS4, 21 PS5
+--     Test reservation = 4
+--     Test session     = 7
+--
 -- INSERT examples:
 --   1. Insert a branch.
 --   2. Insert an Admin, Staff and Customer.
@@ -267,14 +285,54 @@
 --   4. Insert a reservation.
 --   5. Insert a session for testing.
 --
+-- INSERT INTO branches (branch_name, street_address, district, location_city, location_country) VALUES
+-- ('Test Branch', '123 Test St', 'Test District', 'Test City', 'Test Country');
+--
+-- INSERT INTO users (name, role, phone, branch_id) VALUES
+-- ('Test Admin', 'Admin', '123-456-7890', NULL),
+-- ('Test Staff', 'Staff', '234-567-8901', 4),
+-- ('Test Customer', 'Customer', '345-678-9012', 4);
+--
+-- INSERT INTO stations (branch_id, type, hourly_rate, status) VALUES
+-- (4, 'PC', 10.00, 'Available'),
+-- (4, 'PS4', 12.00, 'Available'),
+-- (4, 'PS5', 15.00, 'Available');
+--
+-- INSERT INTO reservations (user_id, branch_id, station_type, reserved_time, deposit_amount, status) VALUES
+-- (17, 4, 'PC', '2026-06-01 10:00:00', 5.00, 'Pending');
+--
+-- INSERT INTO sessions (station_id, user_id, start_time, end_time, final_cost) VALUES
+-- (19, 17, '2026-06-01 10:00:00', NULL, NULL);
+--
 -- UPDATE examples:
 --   1. Change a station status.
 --   2. Change a reservation status.
 --   3. Update a customer's phone.
 --
+-- UPDATE stations SET status = 'InUse' WHERE id = 19; -- test station id
+-- UPDATE reservations SET status = 'Confirmed' WHERE id = 4; -- test reservation id
+-- UPDATE users SET phone = '999-999-9999' WHERE id = 17; -- test customer id
+--
 -- DELETE examples:
 --   1. Delete a development/test station and observe FK behavior.
 --   2. Delete a branch in a controlled test and observe ON DELETE rules.
+--   Run the whole block as ONE selection. stations.branch_id, reservations and
+--   sessions disappear with the branch by CASCADE, while Test users survive with
+--   branch_id NULL by SET NULL. ROLLBACK then restores everything.
+--
+-- BEGIN;
+-- DELETE FROM stations WHERE id = 20; -- test station id
+-- SELECT * FROM stations WHERE id = 20; -- expect no rows (deleted)
+-- DELETE FROM branches WHERE id = 4; -- test branch id
+-- SELECT * FROM branches WHERE id = 4; -- expect no rows (deleted)
+-- SELECT * FROM stations WHERE branch_id = 4; -- expect no rows (ON DELETE CASCADE)
+-- SELECT * FROM users WHERE branch_id = 4; -- expect no rows (ON DELETE SET NULL)
+-- SELECT id, name, branch_id FROM users WHERE name LIKE 'Test%'; -- users still exist, branch_id NULL
+-- ROLLBACK; -- undo the test deletes to preserve test data
+--
+-- Verify after ROLLBACK that the seed is untouched:
+-- SELECT id FROM branches WHERE id = 4; -- expect one row back
+-- SELECT id FROM stations WHERE branch_id = 4; -- expect three rows back
 --
 -- SELECT examples:
 --   1. List all branches.
@@ -282,16 +340,41 @@
 --   3. List stations for one branch.
 --   4. List pending reservations.
 --   5. List active sessions (end_time IS NULL).
+
+SELECT * FROM branches;
+SELECT * FROM users;
+SELECT * FROM stations WHERE branch_id = 4; -- test branch id
+SELECT * FROM reservations WHERE status = 'Pending';
+SELECT * FROM sessions WHERE end_time IS NULL;
 --
 -- JOIN examples:
 --   1. sessions JOIN users JOIN stations to produce active tab information.
 --   2. reservations JOIN users JOIN branches for reservation management.
 --   3. stations JOIN branches for the branch station screen.
+SELECT s.id, u.name, st.type, s.start_time, st.hourly_rate
+FROM sessions s
+JOIN users u ON s.user_id = u.id
+JOIN stations st ON s.station_id = st.id
+WHERE s.end_time IS NULL;
+
+SELECT r.id, u.name, b.branch_name, r.station_type, r.reserved_time, r.status
+FROM reservations r
+JOIN users u ON r.user_id = u.id
+JOIN branches b ON r.branch_id = b.id; 
+
+SELECT st.id, st.type, st.status, b.branch_name
+FROM stations st
+JOIN branches b ON st.branch_id = b.id;
+
 --
 -- AGGREGATE examples:
 --   1. COUNT stations by status.
 --   2. COUNT reservations by status.
 --   3. SUM final_cost for completed sessions.
+
+SELECT status, COUNT(*) FROM stations GROUP BY status;
+SELECT status, COUNT(*) FROM reservations GROUP BY status;
+SELECT SUM(final_cost) FROM sessions WHERE end_time IS NOT NULL;
 --
 -- ============================================================================
 -- 9. INDEX WORK
@@ -304,6 +387,19 @@
 --   reservations(user_id, status)
 --   sessions(station_id, end_time)
 --   sessions(user_id, end_time)
+
+--speed up queries filterred by branch
+CREATE INDEX idx_users_branch ON users(branch_id); 
+--speed up queries filtered by branch and status
+CREATE INDEX idx_stations_branch_status ON stations(branch_id, status);
+--speed up queries filtered by branch and reserved_time
+CREATE INDEX idx_reservations_branch_time ON reservations(branch_id, reserved_time);
+--speed up queries filtered by user and status
+CREATE INDEX idx_reservations_user_status ON reservations(user_id, status);
+--speed up queries filtered by station and end_time
+CREATE INDEX idx_sessions_station_end ON sessions(station_id, end_time);
+--speed up queries filtered by user and end_time
+CREATE INDEX idx_sessions_user_end ON sessions(user_id, end_time);
 --
 -- Do not add indexes blindly. Member 1 should be able to explain why each
 -- index exists and which query uses it.
@@ -322,6 +418,63 @@
 --   * active and completed sessions for testing
 --
 -- TODO [M1]: Keep seed/test records clearly identifiable as development data.
+INSERT INTO branches (branch_name, street_address, district, location_city, location_country) VALUES
+('dev-Main Branch', '111 Sidi-gaber St', 'Smouha', 'Alexandria', 'Egypt'),
+('dev-Uptown Branch', '456 El-eqbal St', 'Victoria', 'Alexandria', 'Egypt'),
+('dev-Maadi Branch', '789 Maadi St', 'Maadi', 'Cairo', 'Egypt');
+
+
+INSERT INTO users (name, role, phone, branch_id) VALUES
+('dev-Alice Admin', 'Admin', '123-456-7890', NULL),
+('dev-John Admin', 'Admin', '987-654-3210', NULL),
+('dev-Jane Admin', 'Admin', '555-555-5555', NULL),
+('dev-Bob Staff', 'Staff', '234-567-8901', 1),
+('dev-Malak Staff','Staff','342-578-9012',1),
+('dev-Eve Staff', 'Staff', '567-890-1234', 2),
+('dev-Frank Staff', 'Staff', '678-901-2345', 2),
+('dev-Grace Staff', 'Staff', '789-012-3456', 3),
+('dev-Heidi Staff', 'Staff', '890-123-4567', 3),
+('dev-Charlie Customer', 'Customer', '345-678-9012', 1),
+('dev-Adam Customer', 'Customer', '012-759-880', 1),
+('dev-Sandy Customer', 'Customer', '015-888-333', 2),
+('dev-Oscar Customer', 'Customer', '019-777-444', 3),
+('dev-Diana Customer', 'Customer', '456-789-0123', 3);
+
+
+INSERT INTO stations (branch_id, type, hourly_rate, status) VALUES
+(1, 'PC', 10.00, 'Available'),
+(1, 'PC', 10.00, 'InUse'),
+(1, 'PS4', 12.00, 'Available'),
+(1, 'PS4', 12.00, 'Available'),
+(1, 'PS5', 15.00, 'Maintenance'),
+(1, 'PS5', 15.00, 'Available'),
+(2, 'PC', 10.00, 'Available'),
+(2, 'PC', 10.00, 'Available'),
+(2, 'PS4', 12.00, 'Available'),
+(2, 'PS4', 12.00, 'InUse'),
+(2, 'PS5', 15.00, 'InUse'),
+(2, 'PS5', 15.00, 'Maintenance'),
+(3, 'PC', 10.00, 'Available'),
+(3, 'PC', 10.00, 'Available'),
+(3, 'PS4', 12.00, 'Available'),
+(3, 'PS4', 12.00, 'Available'),
+(3, 'PS5', 15.00, 'InUse'),
+(3, 'PS5', 15.00, 'Available');
+
+
+INSERT INTO reservations (user_id, branch_id, station_type, reserved_time, deposit_amount, status) VALUES
+(10, 1, 'PC', '2024-06-01 10:00:00', 5.00, 'Pending'),
+(11, 2, 'PS4', '2024-06-02 14:00:00', 6.00, 'Confirmed'),
+(10, 3, 'PS5', '2024-06-03 16:00:00', 7.50, 'Canceled');
+
+
+INSERT INTO sessions (station_id, user_id, start_time, end_time, final_cost) VALUES
+(1, 10, '2024-06-01 10:00:00', '2026-06-01 12:00:00', 20.00),
+(2, 11, '2024-06-02 14:00:00', NULL, NULL),
+(3, 10, '2024-06-03 16:00:00', '2026-06-03 18:30:00', 37.50),
+(10, 10, '2026-10-02 09:00:00', NULL, NULL),
+(11, 11, '2026-10-02 09:30:00', NULL, NULL),
+(17, 10, '2026-10-02 10:00:00', NULL, NULL);
 
 -- ============================================================================
 -- 11. DATABASE-TO-APPLICATION QUERY CONTRACT
