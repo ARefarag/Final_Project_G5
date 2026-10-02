@@ -463,15 +463,15 @@ INSERT INTO stations (branch_id, type, hourly_rate, status) VALUES
 
 
 INSERT INTO reservations (user_id, branch_id, station_type, reserved_time, deposit_amount, status) VALUES
-(10, 1, 'PC', '2024-06-01 10:00:00', 5.00, 'Pending'),
-(11, 2, 'PS4', '2024-06-02 14:00:00', 6.00, 'Confirmed'),
-(10, 3, 'PS5', '2024-06-03 16:00:00', 7.50, 'Canceled');
+(10, 1, 'PC', '2026-06-01 10:00:00', 5.00, 'Pending'),
+(11, 2, 'PS4', '2026-06-02 14:00:00', 6.00, 'Confirmed'),
+(10, 3, 'PS5', '2026-06-03 16:00:00', 7.50, 'Canceled');
 
 
 INSERT INTO sessions (station_id, user_id, start_time, end_time, final_cost) VALUES
-(1, 10, '2024-06-01 10:00:00', '2026-06-01 12:00:00', 20.00),
-(2, 11, '2024-06-02 14:00:00', NULL, NULL),
-(3, 10, '2024-06-03 16:00:00', '2026-06-03 18:30:00', 37.50),
+(1, 10, '2026-06-01 10:00:00', '2026-06-01 12:00:00', 20.00),
+(2, 11, '2026-06-02 14:00:00', NULL, NULL),
+(3, 10, '2026-06-03 16:00:00', '2026-06-03 18:30:00', 37.50),
 (10, 10, '2026-10-02 09:00:00', NULL, NULL),
 (11, 11, '2026-10-02 09:30:00', NULL, NULL),
 (17, 10, '2026-10-02 10:00:00', NULL, NULL);
