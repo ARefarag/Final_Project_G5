@@ -1,22 +1,4 @@
-// ============================================================================
-// GAME&GO - RESERVATION STATE PATTERN (IMPLEMENTATION)
-// OWNER: MEMBER 3
-//
-// Transition table (matches the team's state diagram):
-//   Pending   -> confirm -> Confirmed   (legal)
-//   Pending   -> cancel  -> Canceled    (legal)
-//   Confirmed -> confirm -> rejected    (already confirmed)
-//   Confirmed -> cancel  -> Canceled    (legal)
-//   Canceled  -> confirm -> rejected    (terminal state)
-//   Canceled  -> cancel  -> rejected    (already canceled; idempotent no-op,
-//                                        explicitly NOT treated as an error
-//                                        by the caller - it simply returns
-//                                        false so SessionManager can show a
-//                                        "already canceled" message instead
-//                                        of silently pretending it worked)
-// ============================================================================
 #include "Domain/Reservation.h"
-
 #include <stdexcept>
 #include <string>
 

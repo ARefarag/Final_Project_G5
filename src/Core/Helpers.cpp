@@ -95,35 +95,74 @@ std::string formatMoney(MoneyCents cents) {
 }
 
 MoneyCents parseMoneyCents(const std::string& numeric_value) {
-    // Keep only digits, a single leading '-' and a single '.'; ignore
-    // whitespace or stray characters that might slip in from user input.
-    std::string cleaned;
-    cleaned.reserve(numeric_value.size());
-    bool sawDot = false;
-    for (char ch : numeric_value) {
-        if (std::isdigit(static_cast<unsigned char>(ch))) {
-            cleaned.push_back(ch);
-        } else if (ch == '.' && !sawDot) {
-            cleaned.push_back(ch);
-            sawDot = true;
-        } else if (ch == '-' && cleaned.empty()) {
-            cleaned.push_back(ch);
-        }
-    }
+    // Strict format only: an optional leading '-', one or more digits, and
+    // an optional '.' followed by exactly 1 or 2 digits. Anything else
+    // (stray letters, multiple dots, trailing garbage like "12abc34") is
+    // rejected as invalid input rather than silently stripped out.
+    //
+    // The decimal string is converted directly to integer cents - it never
+    // passes through a floating-point intermediate (no std::stod/double),
+    // so no binary rounding error can enter a money value.
+    const size_t n = numeric_value.size();
+    size_t i = 0;
 
-    if (cleaned.empty() || cleaned == "-") {
+    if (n == 0) {
         return 0;
     }
 
-    try {
-        size_t consumed = 0;
-        const double value = std::stod(cleaned, &consumed);
-        if (consumed != cleaned.size()) {
+    bool negative = false;
+    if (numeric_value[i] == '-') {
+        negative = true;
+        ++i;
+    }
+
+    const size_t integerStart = i;
+    while (i < n && std::isdigit(static_cast<unsigned char>(numeric_value[i]))) {
+        ++i;
+    }
+    const size_t integerLen = i - integerStart;
+    if (integerLen == 0) {
+        // No digits before an optional decimal point - e.g. "-", ".", "-.5".
+        return 0;
+    }
+    const std::string integerPart = numeric_value.substr(integerStart, integerLen);
+
+    std::string fractionalPart;
+    if (i < n && numeric_value[i] == '.') {
+        ++i;
+        const size_t fracStart = i;
+        while (i < n && std::isdigit(static_cast<unsigned char>(numeric_value[i]))) {
+            ++i;
+        }
+        const size_t fracLen = i - fracStart;
+        // NUMERIC(10,2) means at most 2 decimal digits; require at least 1
+        // digit after a decimal point is actually present.
+        if (fracLen == 0 || fracLen > 2) {
             return 0;
         }
-        // Round to the nearest cent (round-half-away-from-zero).
-        return static_cast<MoneyCents>(std::llround(value * 100.0));
+        fractionalPart = numeric_value.substr(fracStart, fracLen);
+    }
+
+    if (i != n) {
+        // Leftover characters after the number (e.g. "12abc34", "12.5x")
+        // mean the whole string is not a valid numeric value.
+        return 0;
+    }
+
+    // Pad a single fractional digit to two ("12.5" -> "50" cents, not 5).
+    if (fractionalPart.empty()) {
+        fractionalPart = "00";
+    } else if (fractionalPart.size() == 1) {
+        fractionalPart.push_back('0');
+    }
+
+    try {
+        const long long integerCents = std::stoll(integerPart) * 100;
+        const long long fractionCents = std::stoll(fractionalPart);
+        const long long totalCents = integerCents + fractionCents;
+        return static_cast<MoneyCents>(negative ? -totalCents : totalCents);
     } catch (const std::exception&) {
+        // Overflow on an unrealistically long digit string.
         return 0;
     }
 }
