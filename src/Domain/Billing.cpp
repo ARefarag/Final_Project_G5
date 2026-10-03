@@ -1,12 +1,4 @@
-// ============================================================================
-// GAME&GO - BILLING STRATEGY PATTERN (IMPLEMENTATION)
-// OWNER: MEMBER 3
-// Agreed rounding rule: cost is rounded to the nearest cent (round-half-up).
-// All math is done in integer cents to avoid floating-point rounding drift
-// in money calculations.
-// ============================================================================
 #include "Domain/Billing.h"
-
 #include <algorithm>
 
 IBillingStrategy::~IBillingStrategy() = default;
