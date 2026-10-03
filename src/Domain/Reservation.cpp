@@ -17,6 +17,9 @@
 // ============================================================================
 #include "Domain/Reservation.h"
 
+#include <stdexcept>
+#include <string>
+
 IReservationState::~IReservationState() = default;
 
 // ---------------------------------------------------------------------
@@ -85,11 +88,13 @@ Reservation::Reservation(const ReservationRecord& record) : record_(record) {
             break;
         case ReservationStatus::Unknown:
         default:
-            // Malformed/legacy status text from the database: fall back to
-            // the safest state (Pending, the least-committed one) rather
-            // than crashing, and correct the stored text to match.
-            state_ = std::make_unique<PendingState>();
-            break;
+            // The SRS requires unknown/invalid database values to never be
+            // silently turned into a valid state (e.g. defaulting to
+            // Pending would let bad data masquerade as a real reservation).
+            // Reject it outright instead.
+            throw std::invalid_argument(
+                "Reservation " + std::to_string(record_.id) +
+                " has an unknown/invalid status: \"" + record_.status + "\"");
     }
     record_.status = toString(state_->status());
 }
