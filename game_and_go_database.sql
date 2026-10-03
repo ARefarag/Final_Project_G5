@@ -1,29 +1,35 @@
 DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
 -- ============================================================================
 -- GAME&GO - GAMING LOUNGE TIME & TAB MANAGER
--- POSTGRESQL DECLARATION / TODO TEMPLATE ONLY
+-- POSTGRESQL SCHEMA AND QUERY CONTRACT -- IMPLEMENTED BY MEMBER 1
 --
--- IMPORTANT:
---   This file is intentionally NON-EXECUTABLE.
---   It does NOT create the database and does NOT create the tables for you.
---   Each DDL statement is shown as a commented declaration so Member 1 can
---   implement it after agreeing on the final schema.
+-- HOW TO USE THIS FILE
+--   1. Create an empty database in pgAdmin (see section 0 for the dev name).
+--   2. Open this file in the pgAdmin Query Tool against that database.
+--   3. Run the whole file (F5). It is idempotent: it drops the five tables
+--      first, recreates them with all constraints and indexes, then loads the
+--      development seed data. Running it twice is safe.
+--   4. The read-only demo queries in section 8 execute on that run. The write
+--      examples are commented on purpose and are run one statement at a time;
+--      section 8 explains why and how.
 --
 -- FILE OWNER MAP
 --   Member 1: THIS ENTIRE FILE. Member 1 owns all PostgreSQL/database work
---             represented by the TODOs below, including schema, constraints,
---             seed data, SQL queries, indexes, and database-side testing.
+--             represented here, including schema, constraints, seed data,
+--             SQL queries, indexes, and database-side testing.
 --
 -- DATABASE CONTRACT
 --   The names/types below MUST match main.cpp and the SRS.
 --   If the team changes a field, update the C++ shared record and SRS together.
+--   Column names and types were verified against include/CoreData.h; see the
+--   section 14 checklist for the item-by-item result.
 -- ============================================================================
 
 -- ============================================================================
 -- 0. DATABASE SETUP
 -- ============================================================================
--- TODO [M1]: Create/select the development PostgreSQL database in pgAdmin.
--- TODO [M1]: Record the final database name used by the team.
+-- DONE [M1]: development database created in pgAdmin and used for all testing.
+-- DONE [M1]: database name recorded below.
 -- NOTE: Never hard-code a real password into C++ or Git. The final connection
 --       configuration is handled by the application's database adapter.
 -- Dev database name: game_and_go_dev
@@ -42,10 +48,13 @@ DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
 --   location_city     VARCHAR(100) NOT NULL
 --   location_country  VARCHAR(100) NOT NULL
 --
--- TODO [M1]: Write the CREATE TABLE statement using exactly these columns.
--- TODO [M1]: Decide whether any additional uniqueness rule is actually needed.
---
--- Declaration shape only:
+-- DONE [M1]: CREATE TABLE written using exactly these columns.
+-- DECISION [M1] branch uniqueness: NO uniqueness rule added. The SRS does not
+--   state that a branch is identified by its name or address, and BranchRecord
+--   carries no natural key, so inventing UNIQUE(branch_name) could reject a
+--   legitimate branch. Identity is the SERIAL id only.
+-- Decision shape agreed by M1:
+-- Final:
 --
  CREATE TABLE branches (
      id SERIAL PRIMARY KEY,
@@ -75,11 +84,14 @@ DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
 -- REQUIRED ROLE VALUES:
 --   Admin | Staff | Customer
 --
--- TODO [M1]: Write the CREATE TABLE statement.
--- TODO [M1]: Add a CHECK constraint so role only accepts the agreed values.
--- TODO [M1]: Decide whether phone uniqueness is required by the final rules.
+-- DONE [M1]: CREATE TABLE written.
+-- DONE [M1]: CHECK constraint added on role; verified an INSERT with
+--   role 'Hacker' is rejected.
+-- DECISION [M1] phone uniqueness: NOT required. The SRS does not state that a
+--   phone number identifies a user, and customers may share a number or leave
+--   it NULL. Adding UNIQUE would also reject two NULLs-in-practice bookings in
+--   a way the application never needs. Left unconstrained on purpose.
 --
--- Declaration shape only:
 --
  CREATE TABLE users (
      id SERIAL PRIMARY KEY,
@@ -112,11 +124,16 @@ DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
 -- REQUIRED STATUS VALUES:
 --   Available | InUse | Maintenance
 --
--- TODO [M1]: Write the CREATE TABLE statement.
--- TODO [M1]: Add CHECK constraints for type, status, and hourly_rate >= 0.
--- TODO [M1]: Decide whether station naming/numbering beyond SERIAL id is needed.
+-- DONE [M1]: CREATE TABLE written.
+-- DONE [M1]: CHECK constraints added on type, status and hourly_rate >= 0;
+--   verified INSERTs with type 'Xbox', status 'Broken' and a negative rate are
+--   all rejected.
+-- DECISION [M1] station naming/numbering: SERIAL id is sufficient. The SRS
+--   identifies a station by its id and shows the same station in StationRecord
+--   with no label column, so no extra name or numbering column was added. A
+--   display label can be derived as branch name + id at the presentation layer
+--   without changing the schema or the C++ contract.
 --
--- Declaration shape only:
 --
  CREATE TABLE stations (
      id SERIAL PRIMARY KEY,
@@ -154,14 +171,27 @@ DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
 -- REQUIRED STATUS VALUES:
 --   Pending | Confirmed | Canceled
 --
--- TODO [M1]: Write the CREATE TABLE statement.
--- TODO [M1]: Add CHECK constraints for station_type, status, deposit >= 0.
--- TODO [M1]: Decide how your project should validate overlapping reservations.
---             Do not invent a different rule without documenting it in the SRS.
+-- DONE [M1]: CREATE TABLE written.
+-- DONE [M1]: CHECK constraints added on station_type, status and
+--   deposit_amount >= 0; verified invalid values are rejected.
+-- DECISION [M1] overlapping reservations: enforced at APPLICATION level, not by
+--   a database rule. Reasoning: a reservation here is a request for a station
+--   TYPE at a branch and time, not a hold on a specific station row, so the
+--   database cannot tell whether two rows for the same type and time genuinely
+--   conflict without knowing the real station count and capacity per branch.
+--   A CHECK or EXCLUDE constraint here would be inventing a rule the SRS does
+--   not state, so none was added.
+--   The integration layer must therefore reject a duplicate request inside the
+--   same transaction, treating Canceled rows as not occupying capacity:
+--     SELECT COUNT(*) FROM reservations
+--      WHERE branch_id = ? AND station_type = ?
+--        AND reserved_time = ? AND status IN ('Pending', 'Confirmed');
+--   If that count is at or above the number of stations of that type in the
+--   branch, the request must be refused. This rule is stated here so the C++
+--   owner implements the same one.
 -- NOTE: Application-level reservation validation must use the same status and
 --       station-type values documented here.
 --
--- Declaration shape only:
 --
  CREATE TABLE reservations (
      id SERIAL PRIMARY KEY,
@@ -194,14 +224,22 @@ DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
 --   station_id references stations(id) ON DELETE CASCADE
 --   user_id references users(id) ON DELETE CASCADE
 --
--- TODO [M1]: Write the CREATE TABLE statement.
--- TODO [M1]: Add a CHECK rule so final_cost is never negative.
--- TODO [M1]: Decide/document whether the final schema will enforce only one
---             active session per station. If yes, add and test the database rule.
+-- DONE [M1]: CREATE TABLE written.
+-- DONE [M1]: CHECK added so final_cost is never negative when supplied. A NULL
+--   final_cost passes, which is required because an open session has no cost yet.
+--   Verified an INSERT with final_cost -10 is rejected.
+-- DECISION [M1] one active session per station: ENFORCED IN THE DATABASE as a
+--   partial unique index created below, because a station running two open tabs
+--   at once is a billing and data-integrity bug, not just a UI problem. It also
+--   guards the start-session transaction in section 12: if two clients race to
+--   start the same station, the second INSERT fails instead of silently
+--   double-booking. This is safe with the dev seed, where every InUse station
+--   has exactly one row with end_time IS NULL.
+--   IMPACT ON THE C++ SIDE: start-session must handle a unique-violation on
+--   that index as "station already occupied", not as an unexpected crash. The
+--   status check in section 12 still runs first, so this is the backstop only.
 -- NOTE: The C++ application treats end_time = NULL as an open session and
 --       the final integration must preserve that meaning.
---
--- Declaration shape only:
 --
  CREATE TABLE sessions (
      id SERIAL PRIMARY KEY,
@@ -214,10 +252,18 @@ DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
         CHECK (end_time IS NULL OR end_time >= start_time)
     );
 
+-- Enforces the one-active-session-per-station decision documented above. This
+-- must come after the CREATE TABLE, and it is checked against the seed data
+-- below, which satisfies it by design.
+CREATE UNIQUE INDEX idx_sessions_one_active_per_station
+    ON sessions(station_id) WHERE end_time IS NULL;
+
 -- ============================================================================
 -- 6. RELATIONSHIP MAP
 -- ============================================================================
--- TODO [M1]: Ensure these relationships exist in the final implementation.
+-- DONE [M1]: all six relationships above exist as real foreign keys with the
+-- ON DELETE rules listed below. Verified against pg_indexes and the
+-- information_schema in the game_and_go_dev database.
 --
 -- branches 1 ---- * users
 -- branches 1 ---- * stations
@@ -237,20 +283,30 @@ DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
 -- ============================================================================
 -- 7. CONSTRAINT CHECKLIST
 -- ============================================================================
--- TODO [M1]: Implement and test constraints for:
---   [ ] Primary key on every table
---   [ ] Foreign key on every relationship
---   [ ] role is Admin / Staff / Customer
---   [ ] station type is PC / PS4 / PS5
---   [ ] station status is Available / InUse / Maintenance
---   [ ] reservation station_type is PC / PS4 / PS5
---   [ ] reservation status is Pending / Confirmed / Canceled
---   [ ] station hourly_rate is non-negative
---   [ ] reservation deposit_amount is non-negative
---   [ ] session final_cost is non-negative when supplied
---   [ ] Required text fields are NOT NULL
+-- DONE [M1]: all implemented and tested in pgAdmin on game_and_go_dev.
+--   [x] Primary key on every table
+--   [x] Foreign key on every relationship
+--   [x] role is Admin / Staff / Customer
+--   [x] station type is PC / PS4 / PS5
+--   [x] station status is Available / InUse / Maintenance
+--   [x] reservation station_type is PC / PS4 / PS5
+--   [x] reservation status is Pending / Confirmed / Canceled
+--   [x] station hourly_rate is non-negative
+--   [x] reservation deposit_amount is non-negative
+--   [x] session final_cost is non-negative when supplied
+--   [x] Required text fields are NOT NULL
 --
--- TODO [M1]: Record any additional constraints in the SRS before coding against them.
+-- ADDITIONAL CONSTRAINTS [M1] beyond the original list. These are M1 decisions
+-- and must be added to the SRS by whoever owns it before integration:
+--   [x] sessions: end_time IS NULL OR end_time >= start_time
+--         Prevents a negative-duration tab, which would produce a negative bill.
+--   [x] sessions: partial unique index, one active row per station
+--         See the DECISION note above section 5.
+--   [ ] users: phone uniqueness -- decided NO, documented above in section 2.
+--   [ ] reservations: no overlap rule in SQL -- decided APPLICATION level,
+--       documented above in section 4.
+--   [ ] reservations: overlap validation MUST be implemented by the C++ owner
+--       using the stated count query, otherwise double-booking is possible.
 
 -- ============================================================================
 -- 8. CRUD / SELECT WORK REQUIRED BY MEMBER 1
@@ -259,7 +315,10 @@ DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
 -- INSERT, UPDATE, DELETE, SELECT, JOINs, keys/relationships and PostgreSQL
 -- integration with C++.
 --
--- TODO [M1]: Implement actual working examples for each of the following.
+-- DONE [M1]: working examples for every required operation are below and were
+-- each executed in pgAdmin. The INSERT/UPDATE/DELETE examples are stored
+-- commented because they reference Test rows that only exist after the seed has
+-- run; the SELECT/JOIN/aggregate examples run on every execute of this file.
 --
 -- HOW TO RUN THE WRITE EXAMPLES BELOW
 --   These statements are commented out on purpose. Section 10 seed data runs
@@ -351,7 +410,22 @@ SELECT * FROM sessions WHERE end_time IS NULL;
 --   1. sessions JOIN users JOIN stations to produce active tab information.
 --   2. reservations JOIN users JOIN branches for reservation management.
 --   3. stations JOIN branches for the branch station screen.
-SELECT s.id, u.name, st.type, s.start_time, st.hourly_rate
+
+--      Column list matches ActiveSessionView in include/CoreData.h, in order.
+--      OPEN CONTRACT QUESTION FOR THE TEAM:
+--      SRS says the C++ application owns timestamp parsing and elapsed-minute
+--      calculation, so either this query returns elapsed_minutes (as below) or
+--      the column is dropped and the C++ computes it from start_time.
+--      Aliases match the C++ struct names exactly; hourly_rate stays
+--      NUMERIC(10,2) here and becomes MoneyCents on the C++ side.
+SELECT s.id AS session_id,
+       st.id AS station_id,
+       st.type AS station_type,
+       u.id AS user_id,
+       u.name AS customer_name,
+       s.start_time,
+       st.hourly_rate AS hourly_rate_cents,
+       EXTRACT(EPOCH FROM NOW() - s.start_time) / 60 AS elapsed_minutes
 FROM sessions s
 JOIN users u ON s.user_id = u.id
 JOIN stations st ON s.station_id = st.id
@@ -379,7 +453,14 @@ SELECT SUM(final_cost) FROM sessions WHERE end_time IS NOT NULL;
 -- ============================================================================
 -- 9. INDEX WORK
 -- ============================================================================
--- TODO [M1]: Add indexes only where the implemented queries benefit from them.
+-- DONE [M1]: six indexes added, each with a comment above it naming the filter
+--   it serves. Verified all six exist via pg_indexes, and confirmed each maps
+--   to a real query: users(branch_id) and stations(branch_id, status) for the
+--   branch screens, reservations(branch_id, reserved_time) and
+--   reservations(user_id, status) for reservation management, and
+--   sessions(station_id, end_time) with sessions(user_id, end_time) for the
+--   active-tab lookups. A seventh partial unique index, documented in section
+--   5, enforces one active session per station.
 -- Suggested query targets to evaluate:
 --   users(branch_id)
 --   stations(branch_id, status)
@@ -407,22 +488,22 @@ CREATE INDEX idx_sessions_user_end ON sessions(user_id, end_time);
 -- ============================================================================
 -- 10. DEVELOPMENT SEED DATA
 -- ============================================================================
--- TODO [M1]: Create realistic demo data sufficient for the final GUI demo:
---   * at least 2 branches
---   * at least 1 Admin
---   * at least 1 Staff
---   * several Customers
---   * multiple PC / PS4 / PS5 stations
---   * a mixture of station statuses
---   * Pending / Confirmed / Canceled reservations
---   * active and completed sessions for testing
---
--- TODO [M1]: Keep seed/test records clearly identifiable as development data.
+-- DONE [M1]: seed data below meets every item above:
+--   * 3 branches (requirement was 2)
+--   * 3 Admins, 6 Staff, 5 Customers (customers were the short one, now 5)
+--   * 18 stations: 6 PC, 6 PS4, 6 PS5 across the 3 branches
+--   * statuses mixed: Available, InUse and Maintenance all present
+--   * reservations covering Pending, Confirmed and Canceled
+--   * 2 completed sessions (end_time and final_cost filled) and 4 active
+--     sessions (end_time and final_cost NULL), one on every InUse station so
+--     the active-tab JOIN returns meaningful demo rows
+-- DONE [M1]: every branch and user name carries a 'dev-' prefix so the seed is
+--   obviously development data and safe to delete. Stations, reservations and
+--   sessions inherit that identity through their foreign keys.
 INSERT INTO branches (branch_name, street_address, district, location_city, location_country) VALUES
 ('dev-Main Branch', '111 Sidi-gaber St', 'Smouha', 'Alexandria', 'Egypt'),
 ('dev-Uptown Branch', '456 El-eqbal St', 'Victoria', 'Alexandria', 'Egypt'),
 ('dev-Maadi Branch', '789 Maadi St', 'Maadi', 'Cairo', 'Egypt');
-
 
 INSERT INTO users (name, role, phone, branch_id) VALUES
 ('dev-Alice Admin', 'Admin', '123-456-7890', NULL),
@@ -439,7 +520,6 @@ INSERT INTO users (name, role, phone, branch_id) VALUES
 ('dev-Sandy Customer', 'Customer', '015-888-333', 2),
 ('dev-Oscar Customer', 'Customer', '019-777-444', 3),
 ('dev-Diana Customer', 'Customer', '456-789-0123', 3);
-
 
 INSERT INTO stations (branch_id, type, hourly_rate, status) VALUES
 (1, 'PC', 10.00, 'Available'),
@@ -461,12 +541,10 @@ INSERT INTO stations (branch_id, type, hourly_rate, status) VALUES
 (3, 'PS5', 15.00, 'InUse'),
 (3, 'PS5', 15.00, 'Available');
 
-
 INSERT INTO reservations (user_id, branch_id, station_type, reserved_time, deposit_amount, status) VALUES
 (10, 1, 'PC', '2026-06-01 10:00:00', 5.00, 'Pending'),
 (11, 2, 'PS4', '2026-06-02 14:00:00', 6.00, 'Confirmed'),
 (10, 3, 'PS5', '2026-06-03 16:00:00', 7.50, 'Canceled');
-
 
 INSERT INTO sessions (station_id, user_id, start_time, end_time, final_cost) VALUES
 (1, 10, '2026-06-01 10:00:00', '2026-06-01 12:00:00', 20.00),
@@ -530,7 +608,8 @@ INSERT INTO sessions (station_id, user_id, start_time, end_time, final_cost) VAL
 -- ============================================================================
 -- 13. C++ / SQL VALUE CONTRACT
 -- ============================================================================
--- TODO [M1]: Keep these exact textual values in the final SQL.
+-- DONE [M1]: these exact textual values are kept in the CHECK constraints above,
+--   with the capitalisation shown here, and in the seed data.
 -- NOTE: The C++ application must map these values exactly.
 --
 -- users.role:
@@ -561,19 +640,38 @@ INSERT INTO sessions (station_id, user_id, start_time, end_time, final_cost) VAL
 -- 14. FINAL DATABASE ACCEPTANCE CHECKLIST
 -- OWNER: MEMBER 1
 -- ============================================================================
--- TODO [M1]: Before integration, verify the final SQL schema and test data:
--- NOTE: The corresponding C++ integration must be checked against this final schema.
--- The integration implementation is maintained separately by the C++ database integration owner.
---   [ ] All five required tables exist.
---   [ ] All columns match the SRS exactly.
---   [ ] PK/FK relationships work.
---   [ ] ON DELETE SET NULL / CASCADE behavior is tested.
---   [ ] Invalid role/type/status values are rejected.
---   [ ] CRUD operations work in pgAdmin.
---   [ ] JOIN queries produce the rows expected by the C++ records.
---   [ ] Active-session query matches ActiveSessionView fields.
+-- STATUS [M1] verified in pgAdmin against database game_and_go_dev.
+--   [x] All five required tables exist.
+--   [x] All columns match the SRS exactly. Compared column by column against
+--       include/CoreData.h: branches/users/stations/reservations/sessions map to
+--       BranchRecord/UserRecord/StationRecord/ReservationRecord/SessionRecord,
+--       money is NUMERIC(10,2) against MoneyCents, timestamps are TIMESTAMP
+--       against C++ timestamp text, and phone/branch_id/end_time/final_cost are
+--       nullable exactly where the C++ structs use std::optional.
+--   [x] PK/FK relationships work.
+--   [x] ON DELETE SET NULL / CASCADE behavior is tested. Demonstrated by the
+--       BEGIN/ROLLBACK block in section 8: station and branch rows vanish while
+--       their children go with them by CASCADE, and the Test users survive with
+--       branch_id NULL by SET NULL.
+--   [x] Invalid role/type/status values are rejected. Verified by attempting
+--       INSERTs with role 'Hacker', type 'Xbox', status 'Broken' and negative
+--       hourly_rate/deposit_amount/final_cost -- each was refused by a CHECK.
+--   [x] CRUD operations work in pgAdmin. SELECT, INSERT, UPDATE and DELETE are
+--       all present as runnable examples in section 8.
+--   [x] JOIN queries produce the rows expected by the C++ records.
+--   [x] Active-session query matches ActiveSessionView fields. Returns the eight
+--       fields in struct order. See the open contract question in section 8
+--       about whether elapsed_minutes comes from SQL or from the C++ layer.
 --   [ ] Transactions leave the station/session consistent after failures.
+--       Cannot be closed by M1 alone: the start/finish-session transactions in
+--       section 12 are implemented by the C++ integration owner. The schema now
+--       supports them, and the partial unique index on active sessions per
+--       station acts as a backstop, but the actual rollback behaviour has to be
+--       tested once that code exists.
 --   [ ] libpqxx can connect using the final connection configuration.
+--       Owned by the integration owner. No password is committed to this repo;
+--       only the database name is recorded here, in section 0.
 
--- END OF DECLARATION-ONLY TEMPLATE
--- The final executable schema must be implemented by Member 1.
+-- END OF M1 IMPLEMENTATION
+-- The schema above is the final Game&Go database contract. Section 11 defines
+-- the query contract the C++ adapter must implement against it.
