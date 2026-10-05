@@ -7,33 +7,28 @@
 // Keep each member's work inside the labeled sections below to reduce Git
 // conflicts. Both members may use the pqxx types in THIS .cpp file only.
 // ============================================================================
+
 #include "Database/PostgresDB.h"
 
 // -------------------------- MEMBER 4: INFRASTRUCTURE ------------------------
-// TODO [M4]: Include <pqxx/pqxx> in THIS .cpp file only.
 // TODO [M4]: Implement DatabaseException, PostgresDB constructor/destructor,
 //             and low-level pqxx row -> shared-record mapping helpers.
 // TODO [M4]: Implement User, Branch, and Station database operations here.
-// TODO [M4]: Use parameterized queries and preserve NULL/empty-result behavior
-//             required by IDatabase and the SRS.
-// TODO [M4]: Do not move pqxx types into any UI/core header.
+// RULE [M4]: Use parameterized queries and preserve NULL/empty-result behavior
+//            required by IDatabase and the SRS.
+// RULE [M4]: Do not move pqxx types into any UI/core header.
 
 // -------------------------- MEMBER 6: DATA FLOWS ----------------------------
-// TODO [M6]: Implement Reservation operations here using parameterized queries
-//             and the shared mapping helpers prepared by Member 4.
-// TODO [M6]: Implement ActiveSessionView / SessionRecord queries here.
-// TODO [M6]: Implement startSession() as one atomic transaction:
-//             verify station -> insert session -> set station InUse -> commit.
-// TODO [M6]: Implement finishSession() as one atomic transaction:
-//             verify active session -> update session -> set station Available -> commit.
-// TODO [M6]: Roll back the transaction on any failure and translate DB failures
-//             to the application-facing error behavior defined by IDatabase/SRS.
+// MEMBER 6 reservation/session implementation is complete below.
+// The completed M6 work includes reservation operations, session queries,
+// and transaction-safe startSession()/finishSession().
 // =============================================================================
 #include <pqxx/pqxx>
 #include <optional>
 #include <string>
 #include <vector>
 #include "Database/PostgresDB.h"
+#include "Core/Helpers.h"
 
 namespace {
 
@@ -104,7 +99,7 @@ int PostgresDB::createReservation(const ReservationRecord& record) {
         if (record.status == ReservationStatus::Unknown)
             throw DatabaseException("createReservation: unknown reservation status");
 
-        pqxx::work tx(*conn_);
+        pqxx::work tx(*connection_);
         const pqxx::row row = tx.exec_params1(
             "INSERT INTO reservations "
             "(user_id, branch_id, station_type, reserved_time, deposit_amount, status) "
@@ -119,7 +114,7 @@ int PostgresDB::createReservation(const ReservationRecord& record) {
 
 std::optional<ReservationRecord> PostgresDB::getReservationById(int reservation_id) {
     return guarded("getReservationById", [&]() -> std::optional<ReservationRecord> {
-        pqxx::nontransaction tx(*conn_);
+        pqxx::nontransaction tx(*connection_);
         const pqxx::result res = tx.exec_params(
             "SELECT " + kReservationCols + " FROM reservations WHERE id = $1", reservation_id);
         if (res.empty()) return std::nullopt;
@@ -127,17 +122,19 @@ std::optional<ReservationRecord> PostgresDB::getReservationById(int reservation_
     });
 }
 
-std::vector<ReservationRecord> PostgresDB::listReservations(int branch_id,
-                                                            std::optional<ReservationStatus> status) {
+std::vector<ReservationRecord> PostgresDB::listReservations(
+    int branch_id,
+    const std::optional<std::string>& status) {
+
     return guarded("listReservations", [&] {
         std::optional<std::string> status_text;  // NULL => no status filter
         if (status) {
-            if (*status == ReservationStatus::Unknown)
+            if (parseReservationStatus(*status) == ReservationStatus::Unknown)
                 throw DatabaseException("listReservations: unknown reservation status filter");
-            status_text = toString(*status);
+            status_text = *status;
         }
 
-        pqxx::nontransaction tx(*conn_);
+        pqxx::nontransaction tx(*connection_);
         const pqxx::result res = tx.exec_params(
             "SELECT " + kReservationCols + " FROM reservations "
             "WHERE branch_id = $1 AND ($2::text IS NULL OR status = $2::text) "
@@ -151,14 +148,17 @@ std::vector<ReservationRecord> PostgresDB::listReservations(int branch_id,
     });
 }
 
-bool PostgresDB::updateReservationStatus(int reservation_id, ReservationStatus status) {
+bool PostgresDB::updateReservationStatus(
+    int reservation_id,
+    const std::string& status) {
+
     return guarded("updateReservationStatus", [&] {
-        if (status == ReservationStatus::Unknown)
+        if (parseReservationStatus(status) == ReservationStatus::Unknown)
             throw DatabaseException("updateReservationStatus: refusing to persist Unknown status");
 
-        pqxx::work tx(*conn_);
+        pqxx::work tx(*connection_);
         const pqxx::result res = tx.exec_params(
-            "UPDATE reservations SET status = $2 WHERE id = $1", reservation_id, toString(status));
+            "UPDATE reservations SET status = $2 WHERE id = $1", reservation_id, status);
         tx.commit();
         return res.affected_rows() > 0;
     });
@@ -170,14 +170,12 @@ bool PostgresDB::updateReservationStatus(int reservation_id, ReservationStatus s
 
 std::vector<ActiveSessionView> PostgresDB::listActiveSessions() {
     return guarded("listActiveSessions", [&] {
-        pqxx::nontransaction tx(*conn_);
+        pqxx::nontransaction tx(*connection_);
         const pqxx::result res = tx.exec(
             "SELECT s.id AS session_id, s.station_id, st.type AS station_type, "
             "       s.user_id, u.name AS customer_name, "
             "       to_char(s.start_time, " + std::string(kTsFormat) + ") AS start_time, "
-            "       (st.hourly_rate * 100)::bigint AS hourly_rate_cents, "
-            "       GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (LOCALTIMESTAMP - s.start_time)) / 60))::int "
-            "         AS elapsed_minutes "
+            "       (st.hourly_rate * 100)::bigint AS hourly_rate_cents "
             "FROM sessions s "
             "JOIN stations st ON st.id = s.station_id "
             "JOIN users u ON u.id = s.user_id "
@@ -195,7 +193,10 @@ std::vector<ActiveSessionView> PostgresDB::listActiveSessions() {
             v.customer_name = r["customer_name"].as<std::string>();
             v.start_time = r["start_time"].as<std::string>();
             v.hourly_rate_cents = r["hourly_rate_cents"].as<MoneyCents>();
-            v.elapsed_minutes = r["elapsed_minutes"].as<int>();
+
+            // Elapsed-time calculation belongs to M3's shared time helper.
+            v.elapsed_minutes = calculateElapsedMinutes(v.start_time, std::nullopt);
+
             out.push_back(std::move(v));
         }
         return out;
@@ -204,7 +205,7 @@ std::vector<ActiveSessionView> PostgresDB::listActiveSessions() {
 
 std::optional<SessionRecord> PostgresDB::getSessionById(int session_id) {
     return guarded("getSessionById", [&]() -> std::optional<SessionRecord> {
-        pqxx::nontransaction tx(*conn_);
+        pqxx::nontransaction tx(*connection_);
         const pqxx::result res = tx.exec_params(
             "SELECT " + kSessionCols + " FROM sessions WHERE id = $1", session_id);
         if (res.empty()) return std::nullopt;
@@ -217,7 +218,7 @@ std::optional<SessionRecord> PostgresDB::getSessionById(int session_id) {
 // DatabaseException and the whole transaction is rolled back.
 int PostgresDB::startSession(const SessionRecord& record) {
     return guarded("startSession", [&] {
-        pqxx::work tx(*conn_);
+        pqxx::work tx(*connection_);
 
         // 1. verify station + lock the row so two clients cannot grab it at once
         const pqxx::result station = tx.exec_params(
@@ -226,12 +227,15 @@ int PostgresDB::startSession(const SessionRecord& record) {
         if (parseStationStatus(station[0][0].as<std::string>()) != StationStatus::Available) return -1;
 
         // 2. insert the active session (end_time / final_cost stay NULL)
-        //    empty start_time => use the database clock
+        //    empty start_time => use the shared UTC clock
+        const std::string start_text =
+            record.start_time.empty() ? nowUtcTimestamp() : record.start_time;
+
         const int session_id = tx.exec_params1(
             "INSERT INTO sessions (station_id, user_id, start_time) "
-            "VALUES ($1, $2, COALESCE(NULLIF($3::text, '')::timestamp, LOCALTIMESTAMP)) "
+            "VALUES ($1, $2, $3::timestamp) "
             "RETURNING id",
-            record.station_id, record.user_id, record.start_time)[0].as<int>();
+            record.station_id, record.user_id, start_text)[0].as<int>();
 
         // 3. mark the station InUse
         tx.exec_params("UPDATE stations SET status = $2 WHERE id = $1",
@@ -243,13 +247,13 @@ int PostgresDB::startSession(const SessionRecord& record) {
 }
 
 // Returns false if the session does not exist or is already finished.
-// record.final_cost_cents is required; record.end_time empty => database clock.
+// record.final_cost_cents is required; record.end_time empty => shared UTC clock.
 bool PostgresDB::finishSession(int session_id, const SessionRecord& record) {
     return guarded("finishSession", [&] {
         if (!record.final_cost_cents)
             throw DatabaseException("finishSession: final_cost_cents is required");
 
-        pqxx::work tx(*conn_);
+        pqxx::work tx(*connection_);
 
         // 1. verify the session is still active + lock it
         const pqxx::result active = tx.exec_params(
@@ -259,13 +263,17 @@ bool PostgresDB::finishSession(int session_id, const SessionRecord& record) {
         const int station_id = active[0][0].as<int>();
 
         // 2. store end_time + final_cost (end must not precede start)
-        const std::string end_text = record.end_time.value_or("");
+        const std::string end_text =
+            !record.end_time || record.end_time->empty()
+                ? nowUtcTimestamp()
+                : *record.end_time;
+
         const pqxx::result upd = tx.exec_params(
             "UPDATE sessions "
-            "SET end_time = COALESCE(NULLIF($2::text, '')::timestamp, LOCALTIMESTAMP), "
+            "SET end_time = $2::timestamp, "
             "    final_cost = ($3::bigint)::numeric / 100 "
             "WHERE id = $1 "
-            "  AND COALESCE(NULLIF($2::text, '')::timestamp, LOCALTIMESTAMP) >= start_time",
+            "  AND $2::timestamp >= start_time",
             session_id, end_text, *record.final_cost_cents);
         if (upd.affected_rows() == 0)
             throw DatabaseException("finishSession: end_time is earlier than start_time");
