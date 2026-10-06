@@ -19,12 +19,13 @@
 #include "Core/Helpers.h"
 
 // -------------------------- MEMBER 4: INFRASTRUCTURE ------------------------
-// TODO [M4]: Implement DatabaseException, PostgresDB constructor/destructor,
-//             and low-level pqxx row -> shared-record mapping helpers.
-// TODO [M4]: Implement User, Branch, and Station database operations here.
+// MEMBER 4 infrastructure, row mapping, connection handling, and
+// User/Branch/Station database operations are implemented in this section.
+//
 // RULE [M4]: Use parameterized queries and preserve NULL/empty-result behavior
 //            required by IDatabase and the SRS.
 // RULE [M4]: Do not move pqxx types into any UI/core header.
+
 IDatabase::~IDatabase() = default;
 
 DatabaseException::DatabaseException(const std::string& message)
@@ -287,7 +288,7 @@ bool PostgresDB::updateStationStatus(
 
 namespace {
 
-constexpr const char* kTsFormat = "'YYYY-MM-DD HH24:MI:SS'";
+constexpr const char* kSessionTsFormat  = "'YYYY-MM-DD HH24:MI:SS'";
 
 // Runs `fn`, converting any non-DatabaseException into a DatabaseException.
 template <class F>
@@ -309,7 +310,7 @@ std::optional<std::string> optText(const pqxx::field& f) {
 // Column list shared by every reservation SELECT so the mapper stays in sync.
 const std::string kReservationCols =
     "id, user_id, branch_id, station_type, "
-    "to_char(reserved_time, " + std::string(kTsFormat) + ") AS reserved_time, "
+    "to_char(reserved_time, " + std::string(kSessionTsFormat) + ") AS reserved_time, "
     "(deposit_amount * 100)::bigint AS deposit_cents, status";
 
 ReservationRecord mapReservation(const pqxx::row& r) {
@@ -326,8 +327,8 @@ ReservationRecord mapReservation(const pqxx::row& r) {
 
 const std::string kSessionCols =
     "id, station_id, user_id, "
-    "to_char(start_time, " + std::string(kTsFormat) + ") AS start_time, "
-    "to_char(end_time, " + std::string(kTsFormat) + ") AS end_time, "
+    "to_char(start_time, " + std::string(kSessionTsFormat) + ") AS start_time, "
+    "to_char(end_time, " + std::string(kSessionTsFormat) + ") AS end_time, "
     "(final_cost * 100)::bigint AS final_cost_cents";
 
 SessionRecord mapSession(const pqxx::row& r) {
@@ -429,7 +430,7 @@ std::vector<ActiveSessionView> PostgresDB::listActiveSessions() {
         const pqxx::result res = tx.exec(
             "SELECT s.id AS session_id, s.station_id, st.type AS station_type, "
             "       s.user_id, u.name AS customer_name, "
-            "       to_char(s.start_time, " + std::string(kTsFormat) + ") AS start_time, "
+            "       to_char(s.start_time, " + std::string(kSessionTsFormat) + ") AS start_time, "
             "       (st.hourly_rate * 100)::bigint AS hourly_rate_cents "
             "FROM sessions s "
             "JOIN stations st ON st.id = s.station_id "
