@@ -9,30 +9,286 @@
 // ============================================================================
 
 #include "Database/PostgresDB.h"
+#include <pqxx/pqxx>
+#include <optional>
+#include <string>
+#include <vector>
+#include <exception>
+#include <memory>
+#include <utility>
+#include "Core/Helpers.h"
 
 // -------------------------- MEMBER 4: INFRASTRUCTURE ------------------------
-// TODO [M4]: Implement DatabaseException, PostgresDB constructor/destructor,
-//             and low-level pqxx row -> shared-record mapping helpers.
-// TODO [M4]: Implement User, Branch, and Station database operations here.
+// MEMBER 4 infrastructure, row mapping, connection handling, and
+// User/Branch/Station database operations are implemented in this section.
+//
 // RULE [M4]: Use parameterized queries and preserve NULL/empty-result behavior
 //            required by IDatabase and the SRS.
 // RULE [M4]: Do not move pqxx types into any UI/core header.
 
+IDatabase::~IDatabase() = default;
+
+DatabaseException::DatabaseException(const std::string& message)
+    : std::runtime_error(message) {
+}
+
+PostgresDB::PostgresDB(const std::string& connection_string)
+    : connection_string_(connection_string) {
+    try {
+        connection_ =
+            std::make_unique<pqxx::connection>(connection_string_);
+    }
+    catch (const pqxx::broken_connection& e) {
+        throw DatabaseException(
+            std::string("Unable to connect to PostgreSQL: ") + e.what());
+    }
+    catch (const std::exception& e) {
+        throw DatabaseException(
+            std::string("PostgreSQL connection setup failed: ") + e.what());
+    }
+}
+
+PostgresDB::~PostgresDB() = default;
+namespace {
+
+    // Exception wrapper for M4 operations.
+    template <class F>
+    auto guardedM4(const char* operation, F&& fn) -> decltype(fn()) {
+        try {
+            return fn();
+        }
+        catch (const DatabaseException&) {
+            throw;
+        }
+        catch (const std::exception& e) {
+            throw DatabaseException(
+                std::string(operation) + " failed: " + e.what());
+        }
+    }
+    const std::string kUserCols =
+        "id, name, role, phone, branch_id";
+
+    const std::string kBranchCols =
+        "id, branch_name, street_address, district, "
+        "location_city, location_country";
+
+    const std::string kStationCols =
+        "id, branch_id, type, "
+        "(hourly_rate * 100)::bigint AS hourly_rate_cents, status";
+
+    UserRecord mapUser(const pqxx::row& row) {
+        UserRecord record{};
+
+        record.id = row["id"].as<int>();
+        record.name = row["name"].as<std::string>();
+        record.role = row["role"].as<std::string>();
+
+        // The shared record uses string, so represent NULL phone as "".
+        record.phone = row["phone"].is_null()
+            ? std::string{}
+        : row["phone"].as<std::string>();
+
+        if (!row["branch_id"].is_null()) {
+            record.branch_id = row["branch_id"].as<int>();
+        }
+        // Otherwise, branch_id remains std::nullopt.
+
+        return record;
+    }
+
+    BranchRecord mapBranch(const pqxx::row& row) {
+        BranchRecord record{};
+
+        record.id = row["id"].as<int>();
+        record.branch_name = row["branch_name"].as<std::string>();
+        record.street_address = row["street_address"].as<std::string>();
+        record.district = row["district"].as<std::string>();
+        record.location_city = row["location_city"].as<std::string>();
+        record.location_country = row["location_country"].as<std::string>();
+
+        return record;
+    }
+
+    StationRecord mapStation(const pqxx::row& row) {
+        StationRecord record{};
+
+        record.id = row["id"].as<int>();
+        record.branch_id = row["branch_id"].as<int>();
+        record.type = row["type"].as<std::string>();
+        record.hourly_rate_cents =
+            row["hourly_rate_cents"].as<MoneyCents>();
+        record.status = row["status"].as<std::string>();
+
+        return record;
+    }
+
+} 
+
+// -------------------------- MEMBER 4: USERS --------------------------------
+
+std::optional<UserRecord> PostgresDB::getUserById(int user_id) {
+    return guardedM4("getUserById",
+        [&]() -> std::optional<UserRecord> {
+            pqxx::nontransaction tx(*connection_);
+
+            const pqxx::result result = tx.exec_params(
+                "SELECT " + kUserCols +
+                " FROM users WHERE id = $1",
+                user_id);
+
+            if (result.empty()) {
+                return std::nullopt;
+            }
+
+            return mapUser(result[0]);
+        });
+}
+
+std::vector<UserRecord> PostgresDB::listUsers() {
+    return guardedM4("listUsers", [&] {
+        pqxx::nontransaction tx(*connection_);
+
+        const pqxx::result result = tx.exec(
+            "SELECT " + kUserCols +
+            " FROM users ORDER BY id");
+
+        std::vector<UserRecord> users;
+        users.reserve(result.size());
+
+        for (const auto& row : result) {
+            users.push_back(mapUser(row));
+        }
+
+        return users;
+        });
+}
+
+std::vector<UserRecord> PostgresDB::listUsersByRole(
+    const std::string& role) {
+    return guardedM4("listUsersByRole", [&] {
+        pqxx::nontransaction tx(*connection_);
+
+        const pqxx::result result = tx.exec_params(
+            "SELECT " + kUserCols +
+            " FROM users WHERE role = $1 ORDER BY id",
+            role);
+
+        std::vector<UserRecord> users;
+        users.reserve(result.size());
+
+        for (const auto& row : result) {
+            users.push_back(mapUser(row));
+        }
+
+        return users;
+        });
+}
+// -------------------------- MEMBER 4: BRANCHES -----------------------------
+
+std::vector<BranchRecord> PostgresDB::listBranches() {
+    return guardedM4("listBranches", [&] {
+        pqxx::nontransaction tx(*connection_);
+
+        const pqxx::result result = tx.exec(
+            "SELECT " + kBranchCols +
+            " FROM branches ORDER BY id");
+
+        std::vector<BranchRecord> branches;
+        branches.reserve(result.size());
+
+        for (const auto& row : result) {
+            branches.push_back(mapBranch(row));
+        }
+
+        return branches;
+        });
+}
+
+// -------------------------- MEMBER 4: STATIONS -----------------------------
+
+std::vector<StationRecord> PostgresDB::listStations(
+    int branch_id,
+    const std::optional<std::string>& station_type) {
+    return guardedM4("listStations", [&] {
+        pqxx::nontransaction tx(*connection_);
+        pqxx::result result;
+
+        if (station_type.has_value()) {
+            result = tx.exec_params(
+                "SELECT " + kStationCols +
+                " FROM stations"
+                " WHERE branch_id = $1 AND type = $2"
+                " ORDER BY id",
+                branch_id, *station_type);
+        }
+        else {
+            result = tx.exec_params(
+                "SELECT " + kStationCols +
+                " FROM stations WHERE branch_id = $1 ORDER BY id",
+                branch_id);
+        }
+
+        std::vector<StationRecord> stations;
+        stations.reserve(result.size());
+
+        for (const auto& row : result) {
+            stations.push_back(mapStation(row));
+        }
+
+        return stations;
+        });
+}
+
+std::optional<StationRecord> PostgresDB::getStationById(int station_id) {
+    return guardedM4("getStationById",
+        [&]() -> std::optional<StationRecord> {
+            pqxx::nontransaction tx(*connection_);
+
+            const pqxx::result result = tx.exec_params(
+                "SELECT " + kStationCols +
+                " FROM stations WHERE id = $1",
+                station_id);
+
+            if (result.empty()) {
+                return std::nullopt;
+            }
+
+            return mapStation(result[0]);
+        });
+}
+
+bool PostgresDB::updateStationStatus(
+    int station_id,
+    const std::string& status) {
+    return guardedM4("updateStationStatus", [&] {
+        if (status != "Available" &&
+            status != "InUse" &&
+            status != "Maintenance") {
+            throw DatabaseException(
+                "updateStationStatus: invalid station status");
+        }
+
+        pqxx::work tx(*connection_);
+
+        const pqxx::result result = tx.exec_params(
+            "UPDATE stations SET status = $2 WHERE id = $1",
+            station_id, status);
+
+        const bool updated = result.affected_rows() > 0;
+        tx.commit();
+
+        return updated;
+        });
+}
 // -------------------------- MEMBER 6: DATA FLOWS ----------------------------
 // MEMBER 6 reservation/session implementation is complete below.
 // The completed M6 work includes reservation operations, session queries,
 // and transaction-safe startSession()/finishSession().
 // =============================================================================
-#include <pqxx/pqxx>
-#include <optional>
-#include <string>
-#include <vector>
-#include "Database/PostgresDB.h"
-#include "Core/Helpers.h"
 
 namespace {
 
-constexpr const char* kTsFormat = "'YYYY-MM-DD HH24:MI:SS'";
+constexpr const char* kSessionTsFormat  = "'YYYY-MM-DD HH24:MI:SS'";
 
 // Runs `fn`, converting any non-DatabaseException into a DatabaseException.
 template <class F>
@@ -54,7 +310,7 @@ std::optional<std::string> optText(const pqxx::field& f) {
 // Column list shared by every reservation SELECT so the mapper stays in sync.
 const std::string kReservationCols =
     "id, user_id, branch_id, station_type, "
-    "to_char(reserved_time, " + std::string(kTsFormat) + ") AS reserved_time, "
+    "to_char(reserved_time, " + std::string(kSessionTsFormat) + ") AS reserved_time, "
     "(deposit_amount * 100)::bigint AS deposit_cents, status";
 
 ReservationRecord mapReservation(const pqxx::row& r) {
@@ -71,8 +327,8 @@ ReservationRecord mapReservation(const pqxx::row& r) {
 
 const std::string kSessionCols =
     "id, station_id, user_id, "
-    "to_char(start_time, " + std::string(kTsFormat) + ") AS start_time, "
-    "to_char(end_time, " + std::string(kTsFormat) + ") AS end_time, "
+    "to_char(start_time, " + std::string(kSessionTsFormat) + ") AS start_time, "
+    "to_char(end_time, " + std::string(kSessionTsFormat) + ") AS end_time, "
     "(final_cost * 100)::bigint AS final_cost_cents";
 
 SessionRecord mapSession(const pqxx::row& r) {
@@ -174,7 +430,7 @@ std::vector<ActiveSessionView> PostgresDB::listActiveSessions() {
         const pqxx::result res = tx.exec(
             "SELECT s.id AS session_id, s.station_id, st.type AS station_type, "
             "       s.user_id, u.name AS customer_name, "
-            "       to_char(s.start_time, " + std::string(kTsFormat) + ") AS start_time, "
+            "       to_char(s.start_time, " + std::string(kSessionTsFormat) + ") AS start_time, "
             "       (st.hourly_rate * 100)::bigint AS hourly_rate_cents "
             "FROM sessions s "
             "JOIN stations st ON st.id = s.station_id "
