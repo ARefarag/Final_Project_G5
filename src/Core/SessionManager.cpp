@@ -22,9 +22,12 @@ bool SessionManager::loginByUserId(int user_id) {
     }
 
     current_user_ = std::move(user);
-    if (current_user_->getBranchId().has_value()) {
-        selected_branch_id_ = current_user_->getBranchId();
-    }
+
+selected_branch_id_ = std::nullopt;
+
+if (current_user_->getBranchId().has_value()) {
+    selected_branch_id_ = current_user_->getBranchId();
+}
     return true;
 }
 
@@ -128,7 +131,7 @@ bool SessionManager::startSession(int user_id, int station_id) {
     SessionRecord session;
     session.station_id = station_id;
     session.user_id = user_id;
-    session.start_time = Helpers::getCurrentTimestamp();
+    session.start_time = Helpers::nowUtcTimestamp();
     session.end_time = std::nullopt;
     session.final_cost_cents = std::nullopt;
 
@@ -146,7 +149,7 @@ bool SessionManager::finishSession(int session_id) {
     auto station_opt = database_->getStationById(session.station_id);
     if (!station_opt.has_value()) return false;
 
-    std::string finish_time = Helpers::getCurrentTimestamp();
+    std::string finish_time = Helpers::nowUtcTimestamp();
     int elapsed = Helpers::calculateElapsedMinutes(session.start_time, finish_time);
 
     MoneyCents cost = previewCost(station_opt->hourly_rate_cents, elapsed);
