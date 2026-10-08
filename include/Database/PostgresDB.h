@@ -28,7 +28,7 @@ class connection;
 
 class DatabaseException : public std::runtime_error {
 public:
-    // TODO [M4]: Implement an application-level wrapper for DB failures.
+    // Implement an application-level wrapper for DB failures.
     explicit DatabaseException(const std::string& message);
 };
 
@@ -37,20 +37,20 @@ private:
     std::unique_ptr<pqxx::connection> connection_;
     std::string connection_string_;
 
-    // TODO [M4]: Add mapping helpers in the .cpp file for pqxx row -> records.
-    //             Member 6 will use these helpers for reservation/session rows.
-    //             Do not expose pqxx types outside this class.
+    // Add mapping helpers in the .cpp file for pqxx row -> records.
+    // Member 6 will use these helpers for reservation/session rows.
+    // Do not expose pqxx types outside this class.
 
 public:
-    // TODO [M4]: Open PostgreSQL connection and validate it.
+    // Open PostgreSQL connection and validate it.
     explicit PostgresDB(const std::string& connection_string);
 
-    // TODO [M4]: Release connection cleanly. Define in PostgresDB.cpp.
+    // Release connection cleanly. Define in PostgresDB.cpp.
     ~PostgresDB() override;
 
     // ---------------------- MEMBER 4: DATABASE CORE -------------------------
-    // TODO [M4]: Implement User, Branch, and Station operations with
-    //             parameterized SQL and the shared-record mapping helpers.
+    // Implement User, Branch, and Station operations with
+    // parameterized SQL and the shared-record mapping helpers.
     std::optional<UserRecord> getUserById(int user_id) override;
     std::vector<UserRecord> listUsers() override;
     std::vector<UserRecord> listUsersByRole(const std::string& role) override;
@@ -63,8 +63,8 @@ public:
                              const std::string& status) override;
 
     // ---------------------- MEMBER 6: APP DATA FLOWS ------------------------
-    // TODO [M6]: Implement Reservation and Session operations with
-    //             parameterized SQL using Member 4's mapping helpers.
+    // Implement Reservation and Session operations with
+    // parameterized SQL using Member 4's mapping helpers.
     int createReservation(const ReservationRecord& reservation) override;
     std::optional<ReservationRecord> getReservationById(
         int reservation_id) override;
@@ -76,8 +76,8 @@ public:
     std::vector<ActiveSessionView> listActiveSessions() override;
     std::optional<SessionRecord> getSessionById(int session_id) override;
 
-    // TODO [M6]: Implement transaction-safe session start/finish operations.
-    //             Both station and session changes must commit or roll back together.
+    // Implement transaction-safe session start/finish operations.
+    // Both station and session changes must commit or roll back together.
     int startSession(const SessionRecord& session) override;
     bool finishSession(int session_id,
                        const SessionRecord& finished_session) override;
