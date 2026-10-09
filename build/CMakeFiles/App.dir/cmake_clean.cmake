@@ -1,0 +1,41 @@
+file(REMOVE_RECURSE
+  "App.exe"
+  "App.exe.manifest"
+  "App.pdb"
+  "CMakeFiles/App.dir/external/imgui/backends/imgui_impl_glfw.cpp.obj"
+  "CMakeFiles/App.dir/external/imgui/backends/imgui_impl_glfw.cpp.obj.d"
+  "CMakeFiles/App.dir/external/imgui/backends/imgui_impl_opengl3.cpp.obj"
+  "CMakeFiles/App.dir/external/imgui/backends/imgui_impl_opengl3.cpp.obj.d"
+  "CMakeFiles/App.dir/external/imgui/imgui.cpp.obj"
+  "CMakeFiles/App.dir/external/imgui/imgui.cpp.obj.d"
+  "CMakeFiles/App.dir/external/imgui/imgui_draw.cpp.obj"
+  "CMakeFiles/App.dir/external/imgui/imgui_draw.cpp.obj.d"
+  "CMakeFiles/App.dir/external/imgui/imgui_tables.cpp.obj"
+  "CMakeFiles/App.dir/external/imgui/imgui_tables.cpp.obj.d"
+  "CMakeFiles/App.dir/external/imgui/imgui_widgets.cpp.obj"
+  "CMakeFiles/App.dir/external/imgui/imgui_widgets.cpp.obj.d"
+  "CMakeFiles/App.dir/main.cpp.obj"
+  "CMakeFiles/App.dir/main.cpp.obj.d"
+  "CMakeFiles/App.dir/src/Core/Enums.cpp.obj"
+  "CMakeFiles/App.dir/src/Core/Enums.cpp.obj.d"
+  "CMakeFiles/App.dir/src/Core/Helpers.cpp.obj"
+  "CMakeFiles/App.dir/src/Core/Helpers.cpp.obj.d"
+  "CMakeFiles/App.dir/src/Core/SessionManager.cpp.obj"
+  "CMakeFiles/App.dir/src/Core/SessionManager.cpp.obj.d"
+  "CMakeFiles/App.dir/src/Database/PostgresDB.cpp.obj"
+  "CMakeFiles/App.dir/src/Database/PostgresDB.cpp.obj.d"
+  "CMakeFiles/App.dir/src/Domain/Billing.cpp.obj"
+  "CMakeFiles/App.dir/src/Domain/Billing.cpp.obj.d"
+  "CMakeFiles/App.dir/src/Domain/Reservation.cpp.obj"
+  "CMakeFiles/App.dir/src/Domain/Reservation.cpp.obj.d"
+  "CMakeFiles/App.dir/src/Domain/User.cpp.obj"
+  "CMakeFiles/App.dir/src/Domain/User.cpp.obj.d"
+  "CMakeFiles/App.dir/src/Presentation/ImGuiApp.cpp.obj"
+  "CMakeFiles/App.dir/src/Presentation/ImGuiApp.cpp.obj.d"
+  "libApp.dll.a"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/App.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()
