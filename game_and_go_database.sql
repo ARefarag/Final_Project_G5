@@ -1,6 +1,9 @@
 --Rolling back as any transaction error that happened in the middle of execution must be rolled back to be fixed 
 ROLLBACK;
+-- FRESH-DEVELOPMENT-DB ONLY: this script drops and recreates the tables below.
+-- For an existing local database, use migrations/001_auth_management.sql instead.
 DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- ============================================================================
 -- GAME&GO - GAMING LOUNGE TIME & TAB MANAGER
 -- ============================================================================
@@ -28,6 +31,8 @@ DROP TABLE IF EXISTS sessions, reservations, stations, users, branches CASCADE;
      role VARCHAR(50) NOT NULL,
      phone VARCHAR(20),
      branch_id INT REFERENCES branches(id) ON DELETE SET NULL,
+     username VARCHAR(64) NOT NULL UNIQUE,
+     password_hash TEXT NOT NULL,
         CHECK (role IN ('Admin', 'Staff', 'Customer'))
  );
 
@@ -90,21 +95,22 @@ INSERT INTO branches (branch_name, street_address, district, location_city, loca
 ('dev-Maadi Branch', '789 Maadi St', 'Maadi', 'Cairo', 'Egypt');
 
 
-INSERT INTO users (name, role, phone, branch_id) VALUES
-('dev-Alice Admin', 'Admin', '123-456-7890', NULL),
-('dev-John Admin', 'Admin', '987-654-3210', NULL),
-('dev-Jane Admin', 'Admin', '555-555-5555', NULL),
-('dev-Bob Staff', 'Staff', '234-567-8901', 1),
-('dev-Malak Staff','Staff','342-578-9012',1),
-('dev-Eve Staff', 'Staff', '567-890-1234', 2),
-('dev-Frank Staff', 'Staff', '678-901-2345', 2),
-('dev-Grace Staff', 'Staff', '789-012-3456', 3),
-('dev-Heidi Staff', 'Staff', '890-123-4567', 3),
-('dev-Charlie Customer', 'Customer', '345-678-9012', 1),
-('dev-Adam Customer', 'Customer', '012-759-880', 1),
-('dev-Sandy Customer', 'Customer', '015-888-333', 2),
-('dev-Oscar Customer', 'Customer', '019-777-444', 3),
-('dev-Diana Customer', 'Customer', '456-789-0123', 3);
+-- ADDED: all seeded accounts share this development-only password: Welcome123!
+INSERT INTO users (name, role, phone, branch_id, username, password_hash) VALUES
+('dev-Alice Admin', 'Admin', '123-456-7890', NULL, 'alice.admin', crypt('Welcome123!', gen_salt('bf'))),
+('dev-John Admin', 'Admin', '987-654-3210', NULL, 'john.admin', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Jane Admin', 'Admin', '555-555-5555', NULL, 'jane.admin', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Bob Staff', 'Staff', '234-567-8901', 1, 'bob.staff', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Malak Staff','Staff','342-578-9012',1, 'malak.staff', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Eve Staff', 'Staff', '567-890-1234', 2, 'eve.staff', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Frank Staff', 'Staff', '678-901-2345', 2, 'frank.staff', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Grace Staff', 'Staff', '789-012-3456', 3, 'grace.staff', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Heidi Staff', 'Staff', '890-123-4567', 3, 'heidi.staff', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Charlie Customer', 'Customer', '345-678-9012', 1, 'charlie.customer', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Adam Customer', 'Customer', '012-759-880', 1, 'adam.customer', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Sandy Customer', 'Customer', '015-888-333', 2, 'sandy.customer', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Oscar Customer', 'Customer', '019-777-444', 3, 'oscar.customer', crypt('Welcome123!', gen_salt('bf'))),
+('dev-Diana Customer', 'Customer', '456-789-0123', 3, 'diana.customer', crypt('Welcome123!', gen_salt('bf')));
 
 
 INSERT INTO stations (branch_id, type, hourly_rate, status) VALUES
@@ -145,7 +151,8 @@ INSERT INTO sessions (station_id, user_id, start_time, end_time, final_cost) VAL
 -- 7. INDEX WORK
 -- ============================================================================
 --speed up queries filterred by branch
-CREATE INDEX idx_users_branch ON users(branch_id); 
+CREATE INDEX idx_users_branch ON users(branch_id);
+CREATE UNIQUE INDEX idx_users_username_lower ON users (lower(username)); 
 --speed up queries filtered by branch and status
 CREATE INDEX idx_stations_branch_status ON stations(branch_id, status);
 --speed up queries filtered by branch and reserved_time
@@ -169,7 +176,7 @@ COMMIT;
 
 --SELECT Tests
 SELECT * FROM branches;
-SELECT * FROM users;
+SELECT id, name, role, phone, branch_id, username FROM users;
 SELECT * FROM stations WHERE branch_id = 1; -- test branch id
 SELECT * FROM reservations WHERE status = 'Pending';
 SELECT * FROM sessions WHERE end_time IS NULL;

@@ -54,13 +54,20 @@ public:
     std::optional<UserRecord> getUserById(int user_id) override;
     std::vector<UserRecord> listUsers() override;
     std::vector<UserRecord> listUsersByRole(const std::string& role) override;
+
+    // ADDED: local PostgreSQL username/password authentication and CRUD.
+    std::optional<UserRecord> authenticateUser(
+        const std::string& username, const std::string& password) override;
+    int createUser(const UserRecord& user, const std::string& password) override;
     std::vector<BranchRecord> listBranches() override;
+    int createBranch(const BranchRecord& branch) override;
     std::vector<StationRecord> listStations(
         int branch_id,
         const std::optional<std::string>& station_type) override;
     std::optional<StationRecord> getStationById(int station_id) override;
     bool updateStationStatus(int station_id,
                              const std::string& status) override;
+    int createStation(const StationRecord& station) override;
 
     // ---------------------- MEMBER 6: APP DATA FLOWS ------------------------
     // Implement Reservation and Session operations with

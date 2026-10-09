@@ -29,6 +29,7 @@ struct UserRecord {
     std::string role;             // Admin / Staff / Customer
     std::string phone;
     std::optional<int> branch_id; // Database allows NULL here.
+    std::string username;         // ADDED: login name; password hash never leaves database.
 };
 
 struct StationRecord {

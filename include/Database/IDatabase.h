@@ -31,8 +31,18 @@ public:
 
     virtual std::vector<UserRecord> listUsersByRole(const std::string& role) = 0;
 
+    // ADDED: credential authentication and account creation.
+    virtual std::optional<UserRecord> authenticateUser(
+        const std::string& username, const std::string& password) = 0;
+    virtual int createUser(const UserRecord& user, const std::string& password) = 0;
+
+
     // ------------------------- BRANCHES [M4] --------------------------------
     virtual std::vector<BranchRecord> listBranches() = 0;
+
+    // ADDED: create branch records for local and PostgreSQL backends.
+    virtual int createBranch(const BranchRecord& branch) = 0;
+
 
     // ------------------------- STATIONS [M4] --------------------------------
     virtual std::vector<StationRecord> listStations(
@@ -43,6 +53,9 @@ public:
 
     virtual bool updateStationStatus(int station_id,
                                      const std::string& status) = 0;
+
+    // ADDED: add a station to a branch.
+    virtual int createStation(const StationRecord& station) = 0;
 
     // ------------------------- RESERVATIONS [M6] ----------------------------
     virtual int createReservation(const ReservationRecord& reservation) = 0;

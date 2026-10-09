@@ -26,7 +26,10 @@ public:
     explicit SessionManager(std::unique_ptr<IDatabase> database);
 
     // TODO [M5]: Load UserRecord, use UserFactory, and reject invalid roles.
-    bool loginByUserId(int user_id);
+    bool loginByUserId(int user_id); // Retained for existing tests/demo integrations.
+
+    // ADDED: normal username/password login.
+    bool loginByCredentials(const std::string& username, const std::string& password);
 
     // TODO [M5]: Return current user without transferring ownership.
     const User* getCurrentUser() const;
@@ -37,6 +40,12 @@ public:
 
     // TODO [M5]: Load database-backed data through IDatabase for ImGui.
     std::vector<BranchRecord> loadBranches();
+    std::vector<UserRecord> loadUsersByRole(const std::string& role);
+
+    // ADDED: role-checked management operations called by the UI.
+    bool createUserAccount(const UserRecord& user, const std::string& password);
+    bool createBranch(const BranchRecord& branch);
+    bool createStation(const StationRecord& station);
     std::vector<StationRecord> loadStations(
         int branch_id,
         const std::optional<std::string>& station_type);
