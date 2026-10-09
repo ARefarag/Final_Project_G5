@@ -8,71 +8,89 @@ SessionManager::SessionManager(std::unique_ptr<IDatabase> database)
       billing_strategy_(std::make_unique<StandardBillingStrategy>()),
       selected_branch_id_(std::nullopt) {}
 
-bool SessionManager::loginByUserId(int user_id) {
-    if (!database_) return false;
+bool SessionManager::loginByUserId(int user_id)
+{
+    if (!database_)
+        return false;
 
     auto record_opt = database_->getUserById(user_id);
-    if (!record_opt.has_value()) {
+    if (!record_opt.has_value())
+    {
         return false;
     }
 
     auto user = UserFactory::create(record_opt.value());
-    if (!user || user->getRole() == UserRole::Unknown) {
+    if (!user || user->getRole() == UserRole::Unknown)
+    {
         return false;
     }
 
     current_user_ = std::move(user);
 
-selected_branch_id_ = std::nullopt;
+    selected_branch_id_ = std::nullopt;
 
-if (current_user_->getBranchId().has_value()) {
-    selected_branch_id_ = current_user_->getBranchId();
-}
+    if (current_user_->getBranchId().has_value())
+    {
+        selected_branch_id_ = current_user_->getBranchId();
+    }
     return true;
 }
 
-const User* SessionManager::getCurrentUser() const {
+const User *SessionManager::getCurrentUser() const
+{
     return current_user_.get();
 }
 
-void SessionManager::setSelectedBranch(int branch_id) {
+void SessionManager::setSelectedBranch(int branch_id)
+{
     selected_branch_id_ = branch_id;
 }
 
-std::optional<int> SessionManager::getSelectedBranch() const {
+std::optional<int> SessionManager::getSelectedBranch() const
+{
     return selected_branch_id_;
 }
 
-std::vector<BranchRecord> SessionManager::loadBranches() {
-    if (!database_) return {};
+std::vector<BranchRecord> SessionManager::loadBranches()
+{
+    if (!database_)
+        return {};
     return database_->listBranches();
 }
 
 std::vector<StationRecord> SessionManager::loadStations(
     int branch_id,
-    const std::optional<std::string>& station_type) {
-    if (!database_) return {};
+    const std::optional<std::string> &station_type)
+{
+    if (!database_)
+        return {};
     return database_->listStations(branch_id, station_type);
 }
 
 std::vector<ReservationRecord> SessionManager::loadReservations(
     int branch_id,
-    const std::optional<std::string>& status) {
-    if (!database_) return {};
+    const std::optional<std::string> &status)
+{
+    if (!database_)
+        return {};
     return database_->listReservations(branch_id, status);
 }
 
-std::vector<ActiveSessionView> SessionManager::loadActiveSessions() {
-    if (!database_) return {};
+std::vector<ActiveSessionView> SessionManager::loadActiveSessions()
+{
+    if (!database_)
+        return {};
     return database_->listActiveSessions();
 }
 
 bool SessionManager::createReservation(int user_id,
-                                      int branch_id,
-                                      const std::string& station_type,
-                                      const std::string& reserved_time,
-                                      MoneyCents deposit_cents) {
-    if (!database_) return false;
+                                       int branch_id,
+                                       const std::string &station_type,
+                                       const std::string &reserved_time,
+                                       MoneyCents deposit_cents)
+{
+    if (!database_)
+        return false;
 
     ReservationRecord record;
     record.user_id = user_id;
@@ -86,52 +104,61 @@ bool SessionManager::createReservation(int user_id,
     return new_id > 0;
 }
 
-bool SessionManager::confirmReservation(int reservation_id) {
-    if (!database_) return false;
+bool SessionManager::confirmReservation(int reservation_id)
+{
+    if (!database_)
+        return false;
 
     auto record_opt = database_->getReservationById(reservation_id);
-    if (!record_opt.has_value()) return false;
+    if (!record_opt.has_value())
+        return false;
 
     Reservation reservation(record_opt.value());
-    if (!reservation.confirm()) {
+    if (!reservation.confirm())
+    {
         return false;
     }
 
     return database_->updateReservationStatus(
         reservation_id,
-        toString(reservation.getStatus())
-    );
+        toString(reservation.getStatus()));
 }
 
-bool SessionManager::cancelReservation(int reservation_id) {
-    if (!database_) return false;
+bool SessionManager::cancelReservation(int reservation_id)
+{
+    if (!database_)
+        return false;
 
     auto record_opt = database_->getReservationById(reservation_id);
-    if (!record_opt.has_value()) return false;
+    if (!record_opt.has_value())
+        return false;
 
     Reservation reservation(record_opt.value());
-    if (!reservation.cancel()) {
+    if (!reservation.cancel())
+    {
         return false;
     }
 
     return database_->updateReservationStatus(
         reservation_id,
-        toString(reservation.getStatus())
-    );
+        toString(reservation.getStatus()));
 }
 
-bool SessionManager::startSession(int user_id, int station_id) {
-    if (!database_) return false;
+bool SessionManager::startSession(int user_id, int station_id)
+{
+    if (!database_)
+        return false;
 
     auto station = database_->getStationById(station_id);
-    if (!station.has_value() || station->status != toString(StationStatus::Available)) {
+    if (!station.has_value() || station->status != toString(StationStatus::Available))
+    {
         return false;
     }
 
     SessionRecord session;
     session.station_id = station_id;
     session.user_id = user_id;
-    session.start_time = Helpers::nowUtcTimestamp();
+    session.start_time = nowUtcTimestamp();
     session.end_time = std::nullopt;
     session.final_cost_cents = std::nullopt;
 
@@ -139,18 +166,22 @@ bool SessionManager::startSession(int user_id, int station_id) {
     return session_id > 0;
 }
 
-bool SessionManager::finishSession(int session_id) {
-    if (!database_) return false;
+bool SessionManager::finishSession(int session_id)
+{
+    if (!database_)
+        return false;
 
     auto session_opt = database_->getSessionById(session_id);
-    if (!session_opt.has_value()) return false;
+    if (!session_opt.has_value())
+        return false;
 
     auto session = session_opt.value();
     auto station_opt = database_->getStationById(session.station_id);
-    if (!station_opt.has_value()) return false;
+    if (!station_opt.has_value())
+        return false;
 
-    std::string finish_time = Helpers::nowUtcTimestamp();
-    int elapsed = Helpers::calculateElapsedMinutes(session.start_time, finish_time);
+    std::string finish_time = nowUtcTimestamp();
+    int elapsed = calculateElapsedMinutes(session.start_time, finish_time);
 
     MoneyCents cost = previewCost(station_opt->hourly_rate_cents, elapsed);
 
@@ -160,15 +191,19 @@ bool SessionManager::finishSession(int session_id) {
     return database_->finishSession(session_id, session);
 }
 
-void SessionManager::setBillingStrategy(std::unique_ptr<IBillingStrategy> strategy) {
-    if (strategy) {
+void SessionManager::setBillingStrategy(std::unique_ptr<IBillingStrategy> strategy)
+{
+    if (strategy)
+    {
         billing_strategy_ = std::move(strategy);
     }
 }
 
 MoneyCents SessionManager::previewCost(MoneyCents hourly_rate_cents,
-                                      int elapsed_minutes) const {
-    if (!billing_strategy_) {
+                                       int elapsed_minutes) const
+{
+    if (!billing_strategy_)
+    {
         StandardBillingStrategy default_strategy;
         return default_strategy.calculate({hourly_rate_cents, elapsed_minutes});
     }

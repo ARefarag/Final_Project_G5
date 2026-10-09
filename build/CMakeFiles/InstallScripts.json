@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/huawei/Desktop/sdasdas/2/build/cmake_install.cmake",
+		"C:/Users/huawei/Desktop/sdasdas/2/build/_deps/glfw-build/cmake_install.cmake",
+		"C:/Users/huawei/Desktop/sdasdas/2/build/_deps/glfw-build/src/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
